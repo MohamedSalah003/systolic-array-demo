@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Matrix Multiplication: CPU vs Systolic Array</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=JetBrains+Mono:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #060c18;
+  --panel: #0b1220;
+  --panel2: #0e1628;
+  --border: #18253d;
+  --border2: #243556;
+  --cpu: #f59e0b;
+  --cpu-bg: rgba(245,158,11,0.10);
+  --cpu-glow: rgba(245,158,11,0.3);
+  --sys: #22d3ee;
+  --sys-bg: rgba(34,211,238,0.09);
+  --sys-glow: rgba(34,211,238,0.3);
+  --green: #4ade80;
+  --green-bg: rgba(74,222,128,0.1);
+  --text: #b0c8e4;
+  --dim: #2d4060;
+  --dim2: #4d6888;
+  --dim3: #6a88aa;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:'JetBrains Mono',monospace;min-height:100vh;overflow-x:hidden;}
+body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(34,211,238,0.022) 1px,transparent 1px),linear-gradient(90deg,rgba(34,211,238,0.022) 1px,transparent 1px);background-size:36px 36px;pointer-events:none;z-index:0;}
+.wrap{position:relative;z-index:1;}
+
+/* HEADER */
+header{padding:1.25rem 2rem 1rem;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem;background:var(--panel);}
+h1{font-family:'Syne',sans-serif;font-size:1.4rem;font-weight:800;letter-spacing:-0.03em;display:flex;align-items:center;gap:0.3rem;}
+.h1-cpu{color:var(--cpu);}
+.h1-vs{color:var(--dim3);font-size:0.9rem;margin:0 0.3rem;}
+.h1-sys{color:var(--sys);}
+.header-sub{font-size:0.6rem;color:var(--dim3);text-transform:uppercase;letter-spacing:0.14em;}
+.tick-counter{font-family:'Syne',sans-serif;font-size:0.7rem;color:var(--dim3);border:1px solid var(--border2);padding:0.3rem 0.8rem;text-align:center;}
+#tick-num{color:var(--text);font-size:1rem;font-weight:700;display:block;line-height:1;}
+
+/* CONTROLS */
+.controls{padding:0.65rem 2rem;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap;background:linear-gradient(var(--panel),var(--panel2));}
+button{font-family:'JetBrains Mono',monospace;font-size:0.7rem;font-weight:600;padding:0.4rem 0.9rem;border:1px solid var(--border2);background:transparent;color:var(--dim3);cursor:pointer;letter-spacing:0.05em;text-transform:uppercase;transition:all 0.15s;}
+button:hover:not(:disabled){border-color:var(--sys);color:var(--sys);}
+button.play-active{border-color:var(--sys);color:var(--sys);background:var(--sys-bg);}
+button:disabled{opacity:0.25;cursor:not-allowed;}
+.sep{width:1px;height:24px;background:var(--border2);margin:0 0.2rem;}
+.speed-wrap{display:flex;align-items:center;gap:0.5rem;color:var(--dim3);font-size:0.62rem;text-transform:uppercase;letter-spacing:0.08em;margin-left:auto;}
+input[type=range]{width:80px;accent-color:var(--sys);cursor:pointer;}
+
+/* MAIN */
+.main{display:grid;grid-template-columns:1fr 1fr;}
+
+/* PANEL */
+.panel{padding:1.25rem 1.4rem;border-right:1px solid var(--border);display:flex;flex-direction:column;gap:0.9rem;}
+.panel:last-child{border-right:none;}
+
+.panel-head{display:flex;align-items:center;justify-content:space-between;}
+.panel-title{font-family:'Syne',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;display:flex;align-items:center;gap:0.45rem;}
+.panel-title.cpu{color:var(--cpu);}
+.panel-title.sys{color:var(--sys);}
+.dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;}
+.dot.cpu{background:var(--cpu);}
+.dot.sys{background:var(--sys);}
+.badge{font-size:0.62rem;padding:0.18rem 0.5rem;border:1px solid var(--border2);color:var(--dim3);}
+.done-badge{font-size:0.62rem;padding:0.18rem 0.5rem;border:1px solid var(--green);color:var(--green);background:var(--green-bg);display:none;}
+.done-badge.show{display:inline-block;}
+
+/* MATRICES */
+.matrices{display:flex;align-items:center;gap:0.55rem;justify-content:center;flex-wrap:wrap;}
+.mat-wrap{display:flex;flex-direction:column;align-items:center;gap:0.25rem;}
+.mat-name{font-family:'Syne',sans-serif;font-size:0.62rem;font-weight:700;color:var(--dim3);text-transform:uppercase;letter-spacing:0.1em;}
+.matrix{display:grid;grid-template-columns:repeat(3,1fr);gap:2px;}
+.cell{width:38px;height:38px;display:flex;align-items:center;justify-content:center;font-size:0.82rem;border:1px solid var(--border);background:var(--bg);color:var(--dim3);transition:all 0.18s;}
+.cell.row-dim{background:rgba(245,158,11,0.07);border-color:rgba(245,158,11,0.22);color:rgba(245,158,11,0.55);}
+.cell.col-dim{background:rgba(34,211,238,0.07);border-color:rgba(34,211,238,0.22);color:rgba(34,211,238,0.55);}
+.cell.a-active{background:rgba(245,158,11,0.22);border-color:var(--cpu);color:var(--cpu);font-weight:700;box-shadow:0 0 8px var(--cpu-glow);}
+.cell.b-active{background:rgba(34,211,238,0.2);border-color:var(--sys);color:var(--sys);font-weight:700;box-shadow:0 0 8px var(--sys-glow);}
+.cell.c-current{background:rgba(74,222,128,0.18);border-color:var(--green);color:var(--green);font-weight:700;}
+.cell.c-done{background:rgba(74,222,128,0.07);border-color:rgba(74,222,128,0.3);color:rgba(74,222,128,0.75);}
+.op-sym{font-family:'Syne',sans-serif;font-size:1.2rem;color:var(--dim2);align-self:flex-end;margin-bottom:10px;}
+
+/* READOUT */
+.readout{background:rgba(0,0,0,0.3);border:1px solid var(--border);padding:0.55rem 0.8rem;font-size:0.72rem;min-height:2.6rem;display:flex;align-items:center;gap:0.25rem;flex-wrap:wrap;line-height:1.6;}
+.r-dim{color:var(--dim3);}
+.r-cpu{color:var(--cpu);font-weight:600;}
+.r-sys{color:var(--sys);font-weight:600;}
+.r-grn{color:var(--green);font-weight:600;}
+
+/* PROGRESS */
+.prog-row{display:flex;align-items:center;gap:0.5rem;}
+.prog-outer{flex:1;height:3px;background:var(--border);border-radius:2px;overflow:hidden;}
+.prog-inner{height:100%;border-radius:2px;transition:width 0.3s;width:0%;}
+.prog-inner.cpu{background:var(--cpu);}
+.prog-inner.sys{background:var(--sys);}
+.prog-text{font-size:0.62rem;color:var(--dim3);white-space:nowrap;min-width:72px;text-align:right;}
+
+/* METRICS */
+.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;}
+.metric{background:rgba(0,0,0,0.22);border:1px solid var(--border);padding:0.45rem 0.5rem;text-align:center;}
+.m-val{font-family:'Syne',sans-serif;font-size:1.35rem;font-weight:800;line-height:1;}
+.m-val.cpu{color:var(--cpu);}
+.m-val.sys{color:var(--sys);}
+.m-lbl{font-size:0.55rem;color:var(--dim3);text-transform:uppercase;letter-spacing:0.07em;margin-top:0.15rem;}
+
+/* SYSTOLIC GRID */
+.sys-grid-wrap{display:flex;justify-content:center;}
+.sys-grid{display:grid;grid-template-columns:58px repeat(3,64px);gap:4px;}
+
+/* B top inputs */
+.b-col{display:flex;flex-direction:column;align-items:center;gap:3px;}
+.b-token{width:62px;height:30px;display:flex;align-items:center;justify-content:center;border:1px solid var(--border);background:var(--bg);font-size:0.7rem;color:var(--dim2);transition:all 0.2s;flex-direction:column;gap:1px;}
+.b-token.active{border-color:var(--sys);background:var(--sys-bg);color:var(--sys);}
+.b-arrow{font-size:0.65rem;color:var(--dim2);text-align:center;line-height:1;}
+.b-arrow.active{color:var(--sys);}
+
+/* A left inputs */
+.a-row{display:flex;align-items:center;gap:4px;}
+.a-token{width:54px;height:62px;display:flex;align-items:center;justify-content:center;border:1px solid var(--border);background:var(--bg);font-size:0.7rem;color:var(--dim2);transition:all 0.2s;flex-direction:column;gap:1px;position:relative;}
+.a-token.active{border-color:var(--cpu);background:var(--cpu-bg);color:var(--cpu);}
+.a-arrow{font-size:0.65rem;color:var(--dim2);}
+.a-arrow.active{color:var(--cpu);}
+
+/* PE cell */
+.pe{width:62px;height:62px;border:1px solid var(--border);background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;transition:all 0.22s;position:relative;overflow:hidden;}
+.pe::before{content:'';position:absolute;inset:0;opacity:0;transition:opacity 0.22s;}
+.pe.just-active{border-color:var(--sys);box-shadow:0 0 14px var(--sys-glow);}
+.pe.just-active::before{background:rgba(34,211,238,0.12);opacity:1;}
+.pe.was-active{border-color:rgba(34,211,238,0.32);background:rgba(34,211,238,0.04);}
+.pe-name{font-size:0.52rem;color:var(--dim2);position:absolute;top:3px;left:4px;line-height:1;}
+.pe.just-active .pe-name{color:rgba(34,211,238,0.6);}
+.pe-acc{font-size:1rem;font-weight:700;color:var(--dim3);position:relative;z-index:1;}
+.pe.just-active .pe-acc{color:var(--sys);}
+.pe.was-active .pe-acc{color:var(--text);}
+.pe-mult{font-size:0.52rem;color:transparent;height:11px;position:relative;z-index:1;text-align:center;}
+.pe.just-active .pe-mult{color:var(--cpu);}
+
+/* LEGEND */
+.legend{display:flex;gap:0.8rem;flex-wrap:wrap;font-size:0.6rem;color:var(--dim3);}
+.leg{display:flex;align-items:center;gap:0.3rem;}
+.leg-sq{width:9px;height:9px;border:1px solid;}
+
+/* COMPARISON */
+.comparison{border-top:1px solid var(--border);background:var(--panel);padding:0.9rem 2rem;display:grid;grid-template-columns:1fr auto 1fr;gap:1.5rem;align-items:center;}
+.comp-stat{display:flex;flex-direction:column;gap:0.25rem;}
+.comp-stat.right{text-align:right;}
+.comp-val{font-family:'Syne',sans-serif;font-size:1.05rem;font-weight:700;}
+.comp-val.cpu{color:var(--cpu);}
+.comp-val.sys{color:var(--sys);}
+.comp-lbl{font-size:0.58rem;color:var(--dim3);text-transform:uppercase;letter-spacing:0.07em;}
+.speedup-center{text-align:center;font-family:'Syne',sans-serif;}
+.speedup-num{font-size:2rem;font-weight:800;background:linear-gradient(135deg,var(--cpu),var(--sys));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;line-height:1;}
+.speedup-lbl{font-size:0.58rem;color:var(--dim3);text-transform:uppercase;letter-spacing:0.1em;}
+
+/* FORMULA */
+.formula{font-size:0.65rem;color:var(--dim3);text-align:center;padding:0.5rem 0;}
+.formula span{color:var(--text);}
+
+@media(max-width:760px){
+  .main{grid-template-columns:1fr;}
+  .panel{border-right:none;border-bottom:1px solid var(--border);}
+  .comparison{grid-template-columns:1fr 1fr;}
+  .speedup-center{display:none;}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div>
+    <h1>
+      <span class="h1-cpu">CPU Sequential</span>
+      <span class="h1-vs">vs</span>
+      <span class="h1-sys">Systolic Array</span>
+    </h1>
+    <div class="header-sub">Matrix Multiplication &nbsp;·&nbsp; 3×3 Example &nbsp;·&nbsp; Interactive Visualization</div>
+  </div>
+  <div class="tick-counter">
+    <span style="font-size:0.55rem;text-transform:uppercase;letter-spacing:0.1em">Wall-Clock Tick</span>
+    <span id="tick-num">—</span>
+  </div>
+</header>
+
+<div class="controls">
+  <button id="btn-play" class="play-active">▶ &nbsp;Play</button>
+  <button id="btn-step">Step →</button>
+  <div class="sep"></div>
+  <button id="btn-reset">↺ &nbsp;Reset</button>
+  <div class="speed-wrap">
+    <span>Speed</span>
+    <input type="range" id="speed-slider" min="1" max="5" value="3">
+    <span id="speed-label">Normal</span>
+  </div>
+</div>
+
+<div class="main">
+
+  <!-- ═══════════ CPU PANEL ═══════════ -->
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-title cpu"><div class="dot cpu"></div>CPU · Sequential MAC</div>
+      <div style="display:flex;gap:5px;align-items:center">
+        <div class="badge" id="cpu-badge">Step — / 27</div>
+        <div class="done-badge" id="cpu-done">✓ Done</div>
+      </div>
+    </div>
+
+    <div class="matrices">
+      <div class="mat-wrap"><div class="mat-name">Matrix A</div><div class="matrix" id="mat-a"></div></div>
+      <div class="op-sym">×</div>
+      <div class="mat-wrap"><div class="mat-name">Matrix B</div><div class="matrix" id="mat-b"></div></div>
+      <div class="op-sym">=</div>
+      <div class="mat-wrap"><div class="mat-name">Result C</div><div class="matrix" id="mat-c"></div></div>
+    </div>
+
+    <div class="readout" id="cpu-readout">
+      <span class="r-dim">Press Play to start — CPU computes one multiply-accumulate at a time</span>
+    </div>
+
+    <div class="prog-row">
+      <div class="prog-outer"><div class="prog-inner cpu" id="cpu-prog"></div></div>
+      <div class="prog-text" id="cpu-prog-lbl">0 / 27 MACs</div>
+    </div>
+
+    <div class="metrics">
+      <div class="metric"><div class="m-val cpu" id="cpu-m1">0</div><div class="m-lbl">Cycle</div></div>
+      <div class="metric"><div class="m-val cpu" id="cpu-m2">0</div><div class="m-lbl">MACs Done</div></div>
+      <div class="metric"><div class="m-val cpu" id="cpu-m3">1</div><div class="m-lbl">Active Units</div></div>
+    </div>
+
+    <div class="legend">
+      <div class="leg"><div class="leg-sq" style="border-color:var(--cpu);background:var(--cpu-bg)"></div><span style="color:var(--cpu)">Row i / A[i][k]</span></div>
+      <div class="leg"><div class="leg-sq" style="border-color:var(--sys);background:var(--sys-bg)"></div><span style="color:var(--sys)">Col j / B[k][j]</span></div>
+      <div class="leg"><div class="leg-sq" style="border-color:var(--green);background:var(--green-bg)"></div><span style="color:var(--green)">C[i][j] accumulating</span></div>
+    </div>
+  </div>
+
+  <!-- ═══════════ SYSTOLIC PANEL ═══════════ -->
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-title sys"><div class="dot sys"></div>Systolic Array · 3×3 PEs</div>
+      <div style="display:flex;gap:5px;align-items:center">
+        <div class="badge" id="sys-badge">Cycle — / 7</div>
+        <div class="done-badge" id="sys-done">✓ Done</div>
+      </div>
+    </div>
+
+    <div class="sys-grid-wrap">
+      <div id="sys-grid"></div>
+    </div>
+
+    <div class="readout" id="sys-readout">
+      <span class="r-dim">Data flows left→right (A rows) and top→bottom (B columns), staggered by 1 cycle per row/col</span>
+    </div>
+
+    <div class="prog-row">
+      <div class="prog-outer"><div class="prog-inner sys" id="sys-prog"></div></div>
+      <div class="prog-text" id="sys-prog-lbl">0 / 7 cycles</div>
+    </div>
+
+    <div class="metrics">
+      <div class="metric"><div class="m-val sys" id="sys-m1">0</div><div class="m-lbl">Cycle</div></div>
+      <div class="metric"><div class="m-val sys" id="sys-m2">0</div><div class="m-lbl">MACs Done</div></div>
+      <div class="metric"><div class="m-val sys" id="sys-m3">0</div><div class="m-lbl">Active PEs</div></div>
+    </div>
+
+    <div class="legend">
+      <div class="leg"><div class="leg-sq" style="border-color:var(--sys);background:rgba(34,211,238,0.18)"></div><span style="color:var(--sys)">Active PE this cycle</span></div>
+      <div class="leg"><div class="leg-sq" style="border-color:rgba(34,211,238,0.35);background:rgba(34,211,238,0.05)"></div><span style="color:var(--dim3)">PE with partial sum</span></div>
+      <div class="leg"><div class="leg-sq" style="border-color:var(--cpu);background:var(--cpu-bg)"></div><span style="color:var(--cpu)">A input (left feed)</span></div>
+    </div>
+  </div>
+
+</div><!-- /main -->
+
+<div class="comparison">
+  <div class="comp-stat">
+    <div class="comp-val cpu">N³ = 27 cycles</div>
+    <div class="comp-lbl">CPU: one MAC per cycle</div>
+    <div style="font-size:0.58rem;color:var(--dim3);margin-top:0.2rem">Sequential · 1 active unit · O(N³)</div>
+  </div>
+  <div class="speedup-center">
+    <div class="speedup-num">3.86×</div>
+    <div class="speedup-lbl">Speedup (N=3)</div>
+    <div style="font-size:0.55rem;color:var(--dim3);margin-top:0.2rem">N³ / (3N−2)</div>
+  </div>
+  <div class="comp-stat right">
+    <div class="comp-val sys">3N−2 = 7 cycles</div>
+    <div class="comp-lbl">Systolic: wavefront parallel</div>
+    <div style="font-size:0.58rem;color:var(--dim3);margin-top:0.2rem">Up to N active PEs/cycle · O(N)</div>
+  </div>
+</div>
+
+</div><!-- /wrap -->
+
+<script>
+const N = 3;
+const A = [[1,2,3],[4,5,6],[7,8,9]];
+const B = [[9,8,7],[6,5,4],[3,2,1]];
+
+const C_EXP = Array.from({length:N},(_,i)=>
+  Array.from({length:N},(_,j)=>
+    A[i].reduce((s,_,k)=>s+A[i][k]*B[k][j],0)
+  )
+);
+
+const TOTAL = 26; // ticks 0..26 → 27 CPU MACs
+const SYS_END = 6; // ticks 0..6 → 7 systolic cycles
+
+let tick, cpuC, sysAcc, sysMacsDone, animId;
+
+/* ─── Speed ─── */
+const SPEEDS = [1500,1000,650,380,160];
+const SLABELS = ['Slow','Medium','Normal','Fast','Turbo'];
+let spd = 2;
+
+document.getElementById('speed-slider').addEventListener('input', e => {
+  spd = +e.target.value - 1;
+  document.getElementById('speed-label').textContent = SLABELS[spd];
+  if (animId) { stopAnim(); startAnim(); }
+});
+
+/* ─── Build static DOM ─── */
+function buildMatrix(id, data) {
+  const el = document.getElementById(id);
+  el.innerHTML = '';
+  for (let i=0;i<N;i++) for (let j=0;j<N;j++) {
+    const c = document.createElement('div');
+    c.className = 'cell';
+    c.id = `${id}-${i}-${j}`;
+    c.textContent = data[i][j];
+    el.appendChild(c);
+  }
+}
+
+function buildCMatrix() {
+  const el = document.getElementById('mat-c');
+  el.innerHTML = '';
+  for (let i=0;i<N;i++) for (let j=0;j<N;j++) {
+    const c = document.createElement('div');
+    c.className = 'cell';
+    c.id = `c-${i}-${j}`;
+    c.textContent = '?';
+    el.appendChild(c);
+  }
+}
+
+function buildSysGrid() {
+  const grid = document.getElementById('sys-grid');
+  grid.innerHTML = '';
+  grid.style.display = 'grid';
+  grid.style.gridTemplateColumns = '58px repeat(3,66px)';
+  grid.style.gap = '4px';
+
+  // Row 0: empty corner + B top inputs
+  const corner = document.createElement('div');
+  grid.appendChild(corner);
+  for (let j=0;j<N;j++) {
+    const col = document.createElement('div');
+    col.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:2px;';
+    const tok = document.createElement('div');
+    tok.className = 'b-token';
+    tok.id = `b-tok-${j}`;
+    tok.innerHTML = `<span style="font-size:0.5rem;color:var(--dim2)">B col ${j}</span><span>─</span>`;
+    const arr = document.createElement('div');
+    arr.className = 'b-arrow';
+    arr.id = `b-arr-${j}`;
+    arr.textContent = '↓';
+    col.appendChild(tok);
+    col.appendChild(arr);
+    grid.appendChild(col);
+  }
+
+  // Rows 1-3: A input + PEs
+  for (let i=0;i<N;i++) {
+    const aCol = document.createElement('div');
+    aCol.style.cssText = 'display:flex;align-items:center;gap:2px;';
+    const aTok = document.createElement('div');
+    aTok.className = 'a-token';
+    aTok.id = `a-tok-${i}`;
+    aTok.innerHTML = `<span style="font-size:0.5rem;color:var(--dim2)">A row ${i}</span><span>─</span>`;
+    const aArr = document.createElement('div');
+    aArr.className = 'a-arrow';
+    aArr.id = `a-arr-${i}`;
+    aArr.textContent = '→';
+    aCol.appendChild(aTok);
+    aCol.appendChild(aArr);
+    grid.appendChild(aCol);
+
+    for (let j=0;j<N;j++) {
+      const pe = document.createElement('div');
+      pe.className = 'pe';
+      pe.id = `pe-${i}-${j}`;
+      pe.innerHTML = `
+        <div class="pe-name">PE[${i}][${j}]</div>
+        <div class="pe-acc" id="pa-${i}-${j}">0</div>
+        <div class="pe-mult" id="pm-${i}-${j}"></div>`;
+      grid.appendChild(pe);
+    }
+  }
+}
+
+/* ─── Reset ─── */
+function init() {
+  tick = -1;
+  cpuC = Array.from({length:N},()=>Array(N).fill(0));
+  sysAcc = Array.from({length:N},()=>Array(N).fill(0));
+  sysMacsDone = 0;
+}
+
+function resetUI() {
+  // A, B, C matrices
+  for (let i=0;i<N;i++) for (let j=0;j<N;j++) {
+    document.getElementById(`mat-a-${i}-${j}`).className='cell';
+    document.getElementById(`mat-b-${i}-${j}`).className='cell';
+    const cc = document.getElementById(`c-${i}-${j}`);
+    cc.className='cell'; cc.textContent='?';
+  }
+  // PE grid
+  for (let i=0;i<N;i++) {
+    for (let j=0;j<N;j++) {
+      document.getElementById(`pe-${i}-${j}`).className='pe';
+      document.getElementById(`pa-${i}-${j}`).textContent='0';
+      document.getElementById(`pm-${i}-${j}`).textContent='';
+    }
+    const at = document.getElementById(`a-tok-${i}`);
+    at.className='a-token';
+    at.innerHTML=`<span style="font-size:0.5rem;color:var(--dim2)">A row ${i}</span><span>─</span>`;
+    document.getElementById(`a-arr-${i}`).className='a-arrow';
+  }
+  for (let j=0;j<N;j++) {
+    const bt = document.getElementById(`b-tok-${j}`);
+    bt.className='b-token';
+    bt.innerHTML=`<span style="font-size:0.5rem;color:var(--dim2)">B col ${j}</span><span>─</span>`;
+    document.getElementById(`b-arr-${j}`).className='b-arrow';
+  }
+  // Badges
+  document.getElementById('cpu-badge').textContent='Step — / 27';
+  document.getElementById('cpu-done').classList.remove('show');
+  document.getElementById('sys-badge').textContent='Cycle — / 7';
+  document.getElementById('sys-done').classList.remove('show');
+  // Readouts
+  document.getElementById('cpu-readout').innerHTML='<span class="r-dim">Press Play to start — CPU computes one multiply-accumulate at a time</span>';
+  document.getElementById('sys-readout').innerHTML='<span class="r-dim">Data flows left→right (A rows) and top→bottom (B columns), staggered by 1 cycle per row/col</span>';
+  // Progress
+  document.getElementById('cpu-prog').style.width='0%';
+  document.getElementById('sys-prog').style.width='0%';
+  document.getElementById('cpu-prog-lbl').textContent='0 / 27 MACs';
+  document.getElementById('sys-prog-lbl').textContent='0 / 7 cycles';
+  // Metrics
+  ['cpu-m1','cpu-m2','cpu-m3'].forEach((id,k)=>document.getElementById(id).textContent=k===2?'1':'0');
+  ['sys-m1','sys-m2','sys-m3'].forEach(id=>document.getElementById(id).textContent='0');
+  // Tick
+  document.getElementById('tick-num').textContent='—';
+  // Buttons
+  document.getElementById('btn-step').disabled=false;
+  document.getElementById('btn-play').textContent='▶ \u00a0Play';
+  document.getElementById('btn-play').classList.add('play-active');
+}
+
+/* ─── ADVANCE ONE TICK ─── */
+function advance() {
+  tick++;
+  document.getElementById('tick-num').textContent = tick;
+
+  /* ════ CPU: one MAC ════ */
+  if (tick <= TOTAL) {
+    const s = tick;
+    const ci = Math.floor(s/9);
+    const cj = Math.floor((s%9)/3);
+    const ck = s % 3;
+
+    // Clear A/B highlights
+    for (let i=0;i<N;i++) for (let j=0;j<N;j++) {
+      document.getElementById(`mat-a-${i}-${j}`).className='cell';
+      document.getElementById(`mat-b-${i}-${j}`).className='cell';
+    }
+    // Dim row ci in A
+    for (let j=0;j<N;j++) document.getElementById(`mat-a-${ci}-${j}`).className='cell row-dim';
+    document.getElementById(`mat-a-${ci}-${ck}`).className='cell a-active';
+    // Dim col cj in B
+    for (let i=0;i<N;i++) document.getElementById(`mat-b-${i}-${cj}`).className='cell col-dim';
+    document.getElementById(`mat-b-${ck}-${cj}`).className='cell b-active';
+
+    const prod = A[ci][ck]*B[ck][cj];
+    cpuC[ci][cj] += prod;
+
+    // Update C display
+    for (let i=0;i<N;i++) for (let j=0;j<N;j++) {
+      const el = document.getElementById(`c-${i}-${j}`);
+      if (cpuC[i][j]===0){el.className='cell';el.textContent='?';}
+      else if (i===ci&&j===cj){el.className='cell c-current';el.textContent=cpuC[i][j];}
+      else if (cpuC[i][j]===C_EXP[i][j]){el.className='cell c-done';el.textContent=cpuC[i][j];}
+      else{el.className='cell c-current';el.textContent=cpuC[i][j];}
+    }
+
+    const macs = s+1;
+    document.getElementById('cpu-badge').textContent=`Step ${macs} / 27`;
+    document.getElementById('cpu-prog').style.width=`${macs/27*100}%`;
+    document.getElementById('cpu-prog-lbl').textContent=`${macs} / 27 MACs`;
+    document.getElementById('cpu-m1').textContent=macs;
+    document.getElementById('cpu-m2').textContent=macs;
+    document.getElementById('cpu-readout').innerHTML=
+      `<span class="r-dim">C[${ci}][${cj}] +=</span> `+
+      `<span class="r-cpu">A[${ci}][${ck}]=${A[ci][ck]}</span>`+
+      `<span class="r-dim"> × </span>`+
+      `<span class="r-sys">B[${ck}][${cj}]=${B[ck][cj]}</span>`+
+      `<span class="r-dim"> = </span>`+
+      `<span class="r-grn">${prod} &nbsp;→ acc = ${cpuC[ci][cj]}</span>`;
+
+    if (tick===TOTAL) {
+      document.getElementById('cpu-badge').style.display='none';
+      document.getElementById('cpu-done').classList.add('show');
+      document.getElementById('cpu-readout').innerHTML=
+        `<span class="r-grn">✓ Complete! C fully computed in 27 sequential MACs.</span>`;
+      for (let i=0;i<N;i++) for (let j=0;j<N;j++)
+        document.getElementById(`mat-a-${i}-${j}`).className='cell',
+        document.getElementById(`mat-b-${i}-${j}`).className='cell';
+    }
+  }
+
+  /* ════ SYSTOLIC: one cycle ════ */
+  if (tick <= SYS_END) {
+    const t = tick;
+
+    // Clear 'just-active' → 'was-active'
+    for (let i=0;i<N;i++) for (let j=0;j<N;j++) {
+      const pe = document.getElementById(`pe-${i}-${j}`);
+      if (pe.classList.contains('just-active')) pe.className='pe was-active';
+      document.getElementById(`pm-${i}-${j}`).textContent='';
+    }
+
+    const active = [];
+    for (let i=0;i<N;i++) for (let j=0;j<N;j++) {
+      const k = t-i-j;
+      if (k>=0&&k<N) {
+        const av=A[i][k], bv=B[k][j], p=av*bv;
+        sysAcc[i][j]+=p; sysMacsDone++;
+        active.push({i,j,k,av,bv,p});
+        const pe=document.getElementById(`pe-${i}-${j}`);
+        pe.className='pe just-active';
+        document.getElementById(`pa-${i}-${j}`).textContent=sysAcc[i][j];
+        document.getElementById(`pm-${i}-${j}`).textContent=`${av}×${bv}`;
+      }
+    }
+
+    // A left input tokens: row i sees A[i][t-i]
+    for (let i=0;i<N;i++) {
+      const ki=t-i;
+      const at=document.getElementById(`a-tok-${i}`);
+      const aa=document.getElementById(`a-arr-${i}`);
+      if (ki>=0&&ki<N){
+        at.className='a-token active';
+        at.innerHTML=`<span style="font-size:0.5rem">A[${i}][${ki}]</span><span style="font-weight:700">${A[i][ki]}</span>`;
+        aa.className='a-arrow active';
+      } else {
+        at.className='a-token';
+        at.innerHTML=`<span style="font-size:0.5rem;color:var(--dim2)">A row ${i}</span><span>─</span>`;
+        aa.className='a-arrow';
+      }
+    }
+
+    // B top input tokens: col j sees B[t-j][j]
+    for (let j=0;j<N;j++) {
+      const kj=t-j;
+      const bt=document.getElementById(`b-tok-${j}`);
+      const ba=document.getElementById(`b-arr-${j}`);
+      if (kj>=0&&kj<N){
+        bt.className='b-token active';
+        bt.innerHTML=`<span style="font-size:0.5rem">B[${kj}][${j}]</span><span style="font-weight:700">${B[kj][j]}</span>`;
+        ba.className='b-arrow active';
+      } else {
+        bt.className='b-token';
+        bt.innerHTML=`<span style="font-size:0.5rem;color:var(--dim2)">B col ${j}</span><span>─</span>`;
+        ba.className='b-arrow';
+      }
+    }
+
+    const cyc=t+1;
+    document.getElementById('sys-badge').textContent=`Cycle ${cyc} / 7`;
+    document.getElementById('sys-prog').style.width=`${cyc/7*100}%`;
+    document.getElementById('sys-prog-lbl').textContent=`${cyc} / 7 cycles`;
+    document.getElementById('sys-m1').textContent=cyc;
+    document.getElementById('sys-m2').textContent=sysMacsDone;
+    document.getElementById('sys-m3').textContent=active.length;
+
+    // Readout: list active PEs
+    if (active.length>0) {
+      const parts=active.map(({i,j,k,av,bv,p})=>
+        `<span class="r-sys">PE[${i}][${j}]</span><span class="r-dim">: ${av}×${bv}=${p}</span>`
+      ).join('<span class="r-dim"> &nbsp;|&nbsp; </span>');
+      document.getElementById('sys-readout').innerHTML=
+        `<span class="r-dim">t=${t}: &nbsp;</span>${parts}`+
+        `<span class="r-dim"> &nbsp;(${active.length} PE${active.length>1?'s':''} active)</span>`;
+    }
+
+    if (tick===SYS_END) {
+      document.getElementById('sys-badge').style.display='none';
+      document.getElementById('sys-done').classList.add('show');
+      document.getElementById('sys-readout').innerHTML=
+        `<span class="r-grn">✓ All 9 outputs computed in 7 cycles — 3.86× fewer cycles than CPU!</span>`;
+      // Clear input tokens
+      for (let i=0;i<N;i++){
+        const at=document.getElementById(`a-tok-${i}`);
+        at.className='a-token';
+        at.innerHTML=`<span style="font-size:0.5rem;color:var(--dim2)">A row ${i}</span><span>─</span>`;
+        document.getElementById(`a-arr-${i}`).className='a-arrow';
+      }
+      for (let j=0;j<N;j++){
+        const bt=document.getElementById(`b-tok-${j}`);
+        bt.className='b-token';
+        bt.innerHTML=`<span style="font-size:0.5rem;color:var(--dim2)">B col ${j}</span><span>─</span>`;
+        document.getElementById(`b-arr-${j}`).className='b-arrow';
+      }
+      // Finalize PEs
+      for (let i=0;i<N;i++) for (let j=0;j<N;j++) {
+        const pe=document.getElementById(`pe-${i}-${j}`);
+        if (pe.classList.contains('just-active')) pe.className='pe was-active';
+      }
+    }
+  }
+
+  if (tick>=TOTAL) { stopAnim(); document.getElementById('btn-step').disabled=true; }
+}
+
+/* ─── Animation control ─── */
+function startAnim() {
+  if (tick>=TOTAL) return;
+  animId = setInterval(advance, SPEEDS[spd]);
+  document.getElementById('btn-play').textContent='⏸ \u00a0Pause';
+}
+function stopAnim() {
+  clearInterval(animId); animId=null;
+  if (tick<TOTAL) {
+    document.getElementById('btn-play').textContent='▶ \u00a0Play';
+  }
+}
+
+document.getElementById('btn-play').addEventListener('click',()=>{
+  animId ? stopAnim() : startAnim();
+});
+
+document.getElementById('btn-step').addEventListener('click',()=>{
+  stopAnim();
+  if (tick<TOTAL) advance();
+  if (tick>=TOTAL) document.getElementById('btn-step').disabled=true;
+});
+
+document.getElementById('btn-reset').addEventListener('click',()=>{
+  stopAnim(); init(); resetUI();
+  document.getElementById('cpu-badge').style.display='';
+  document.getElementById('sys-badge').style.display='';
+});
+
+/* ─── Initialize ─── */
+buildMatrix('mat-a',A);
+buildMatrix('mat-b',B);
+buildCMatrix();
+buildSysGrid();
+init();
+</script>
+</body>
+</html>

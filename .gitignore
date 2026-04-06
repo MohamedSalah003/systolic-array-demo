@@ -1,0 +1,4 @@
+.DS_Store
+labs/.DS_Store
+labs/systolic_array_3x3/sim
+labs/systolic_array_3x3/*.vcd
